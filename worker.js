@@ -1,91 +1,25 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=300'
-    };
 
-    if (url.pathname === '/api/nodes') {
+    // 处理转换请求
+    if (url.pathname === '/convert') {
       try {
-        // 使用 GitHub API 获取目录列表
-        const apiResponse = await fetch(
-          'https://api.github.com/repos/changfengoss/pub/contents/data',
-          {
-            headers: {
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'NodesHub'
-            }
+        const { input, format } = await request.json();
+        const result = await convertNodes(input, format);
+        return new Response(JSON.stringify({ result }), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
           }
-        );
-
-        if (!apiResponse.ok) {
-          throw new Error(`GitHub API error: ${apiResponse.status}`);
-        }
-
-        const directories = await apiResponse.json();
-        
-        // 获取最新的日期目录
-        const latestDir = directories
-          .filter(item => item.type === 'dir')
-          .sort((a, b) => b.name.localeCompare(a.name))[0];
-
-        if (!latestDir) {
-          throw new Error('No date directories found');
-        }
-
-        // 获取最新目录下的文件列表
-        const filesResponse = await fetch(
-          `https://api.github.com/repos/changfengoss/pub/contents/data/${latestDir.name}`,
-          {
-            headers: {
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'NodesHub'
-            }
-          }
-        );
-
-        if (!filesResponse.ok) {
-          throw new Error(`Failed to fetch files: ${filesResponse.status}`);
-        }
-
-        const files = await filesResponse.json();
-
-        // 过滤并处理节点文件
-        const nodes = files
-          .filter(file => {
-            const name = file.name.toLowerCase();
-            return name.endsWith('.txt') || 
-                   name.endsWith('.yaml') || 
-                   name.endsWith('.yml');
-          })
-          .map(file => ({
-            name: file.name,
-            download_url: file.download_url,
-            size: file.size,
-            updated_at: new Date().toISOString(),
-            type: file.name.split('.').pop().toLowerCase(),
-            directory: latestDir.name
-          }));
-
-        if (nodes.length === 0) {
-          throw new Error(`No node files found in directory ${latestDir.name}`);
-        }
-
-        console.log(`Found ${nodes.length} nodes in ${latestDir.name}`);
-        return new Response(JSON.stringify(nodes), { headers });
-
+        });
       } catch (error) {
-        console.error('Error:', error);
-        return new Response(JSON.stringify({ 
-          error: '获取节点失败', 
-          details: error.message,
-          timestamp: new Date().toISOString()
-        }), { 
-          status: 500,
-          headers 
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
         });
       }
     }
@@ -95,7 +29,7 @@ export default {
         <!DOCTYPE html>
         <html>
           <head>
-            <title>节点列表 - 高速节点</title>
+            <title>节点转换器 - Nodes Hub</title>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
@@ -113,6 +47,9 @@ export default {
                 width: 100%;
                 top: 0;
                 z-index: 100;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
               }
               .logo {
                 color: #ffffff;
@@ -128,117 +65,258 @@ export default {
                 margin: 6rem auto 2rem;
                 padding: 0 1rem;
               }
-              .grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-                gap: 1.5rem;
-              }
-              .card {
+              .input-group {
                 background-color: #2b2b2b;
+                padding: 2rem;
                 border-radius: 0.5rem;
-                overflow: hidden;
-                transition: transform 0.2s;
+                margin-bottom: 2rem;
               }
-              .card:hover {
-                transform: translateY(-5px);
+              .input-label {
+                display: block;
+                margin-bottom: 0.5rem;
+                color: #f90;
+                font-weight: bold;
               }
-              .card-header {
-                background-color: #000000;
-                padding: 1rem;
-                font-size: 1.1rem;
-              }
-              .card-body {
-                padding: 1rem;
-              }
-              .stats {
-                display: flex;
-                justify-content: space-between;
-                color: #999;
-                font-size: 0.9rem;
+              .input-field {
+                width: 100%;
+                padding: 0.8rem;
+                background-color: #1b1b1b;
+                border: 1px solid #f90;
+                border-radius: 0.3rem;
+                color: #ffffff;
                 margin-bottom: 1rem;
               }
-              .download-btn {
+              .convert-btn {
                 background-color: #f90;
                 color: #000000;
-                text-decoration: none;
-                padding: 0.5rem 1rem;
+                border: none;
+                padding: 0.8rem 1.5rem;
                 border-radius: 0.3rem;
-                display: block;
-                text-align: center;
                 font-weight: bold;
+                cursor: pointer;
                 transition: background-color 0.2s;
               }
-              .download-btn:hover {
+              .convert-btn:hover {
                 background-color: #ff8c00;
               }
-              .loading {
-                text-align: center;
-                padding: 2rem;
-                font-size: 1.2rem;
+              .result {
+                background-color: #2b2b2b;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                white-space: pre-wrap;
+                display: none;
+              }
+              .github-link {
                 color: #f90;
+                text-decoration: none;
+                padding: 0.5rem 1rem;
+                border: 1px solid #f90;
+                border-radius: 0.3rem;
+                transition: all 0.2s;
+              }
+              .github-link:hover {
+                background-color: #f90;
+                color: #000000;
+              }
+              .format-select {
+                padding: 0.8rem;
+                background-color: #1b1b1b;
+                border: 1px solid #f90;
+                border-radius: 0.3rem;
+                color: #ffffff;
+                margin-bottom: 1rem;
+                width: 100%;
+              }
+              .format-select option {
+                background-color: #1b1b1b;
+                color: #ffffff;
               }
             </style>
           </head>
           <body>
             <header class="header">
               <a href="/" class="logo">Nodes Hub</a>
+              <a href="https://github.com/changfengoss/pub/tree/main/data" 
+                 class="github-link" 
+                 target="_blank"
+                 rel="noopener noreferrer">
+                获取最新节点
+              </a>
             </header>
             <div class="container">
-              <div id="nodeList" class="grid">
-                <div class="loading">加载中...</div>
+              <div class="input-group">
+                <label class="input-label">节点内容转换</label>
+                <textarea id="input" 
+                          class="input-field" 
+                          rows="10" 
+                          placeholder="请粘贴节点内容..."></textarea>
+                <select id="format" class="format-select">
+                  <option value="clash">Clash</option>
+                  <option value="v2ray">V2Ray</option>
+                  <option value="ss">Shadowsocks</option>
+                  <option value="ssr">ShadowsocksR</option>
+                  <option value="trojan">Trojan</option>
+                </select>
+                <button onclick="convertFormat()" class="convert-btn">转换格式</button>
               </div>
+              <pre id="result" class="result"></pre>
             </div>
             <script>
-              async function fetchNodes() {
-                try {
-                  const response = await fetch('/api/nodes');
-                  if (!response.ok) {
-                    throw new Error(\`HTTP error! status: \${response.status}\`);
+              // Base64 编码/解码函数
+              function base64Decode(str) {
+                return atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+              }
+
+              function base64Encode(str) {
+                return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+              }
+
+              // 解析 URL 编码的参数
+              function parseQueryString(url) {
+                const params = {};
+                const searchParams = new URLSearchParams(url.split('?')[1]);
+                for (const [key, value] of searchParams) {
+                  params[key] = decodeURIComponent(value);
+                }
+                return params;
+              }
+
+              // 解析不同格式的节点
+              function parseNode(input) {
+                const nodes = [];
+                const lines = input.split('\\n').filter(line => line.trim());
+
+                for (const line of lines) {
+                  try {
+                    if (line.startsWith('ss://')) {
+                      // 解析 SS 节点
+                      const url = new URL(line);
+                      const base64 = url.username + (url.password ? ':' + url.password : '');
+                      const decoded = base64Decode(base64);
+                      const [method, password] = decoded.split(':');
+                      nodes.push({
+                        type: 'ss',
+                        server: url.hostname,
+                        port: url.port,
+                        method,
+                        password,
+                        name: decodeURIComponent(url.hash.slice(1))
+                      });
+                    } else if (line.startsWith('vmess://')) {
+                      // 解析 V2Ray 节点
+                      const json = JSON.parse(base64Decode(line.slice(8)));
+                      nodes.push({
+                        type: 'vmess',
+                        server: json.add,
+                        port: json.port,
+                        uuid: json.id,
+                        alterId: json.aid,
+                        network: json.net,
+                        name: json.ps
+                      });
+                    }
+                    // 可以添加更多格式的解析
+                  } catch (e) {
+                    console.error('Failed to parse node:', line, e);
                   }
-                  const data = await response.json();
-                  if (data.error) {
-                    throw new Error(data.error);
-                  }
-                  displayNodes(data);
-                } catch (error) {
-                  console.error('获取节点失败:', error);
-                  document.getElementById('nodeList').innerHTML = 
-                    '<div class="loading">获取节点失败: ' + error.message + '<br>请稍后重试</div>';
+                }
+                return nodes;
+              }
+
+              // 转换为不同格式
+              function convertToFormat(nodes, format) {
+                switch (format) {
+                  case 'clash':
+                    return generateClashConfig(nodes);
+                  case 'v2ray':
+                    return generateV2RayConfig(nodes);
+                  // 可以添加更多格式的转换
+                  default:
+                    throw new Error('不支持的格式');
                 }
               }
 
-              function displayNodes(nodes) {
-                const nodeList = document.getElementById('nodeList');
-                if (!nodes || !nodes.length) {
-                  nodeList.innerHTML = '<div class="loading">暂无可用节点</div>';
+              // 生成 Clash 配置
+              function generateClashConfig(nodes) {
+                const config = {
+                  port: 7890,
+                  'socks-port': 7891,
+                  'allow-lan': true,
+                  mode: 'Rule',
+                  'log-level': 'info',
+                  proxies: nodes.map(node => {
+                    if (node.type === 'ss') {
+                      return {
+                        name: node.name,
+                        type: 'ss',
+                        server: node.server,
+                        port: node.port,
+                        cipher: node.method,
+                        password: node.password
+                      };
+                    } else if (node.type === 'vmess') {
+                      return {
+                        name: node.name,
+                        type: 'vmess',
+                        server: node.server,
+                        port: node.port,
+                        uuid: node.uuid,
+                        alterId: node.alterId,
+                        network: node.network
+                      };
+                    }
+                  })
+                };
+                return JSON.stringify(config, null, 2);
+              }
+
+              // 生成 V2Ray 配置
+              function generateV2RayConfig(nodes) {
+                const config = {
+                  outbounds: nodes.map(node => {
+                    if (node.type === 'vmess') {
+                      return {
+                        protocol: 'vmess',
+                        settings: {
+                          vnext: [{
+                            address: node.server,
+                            port: node.port,
+                            users: [{
+                              id: node.uuid,
+                              alterId: node.alterId
+                            }]
+                          }]
+                        },
+                        tag: node.name
+                      };
+                    }
+                  }).filter(Boolean)
+                };
+                return JSON.stringify(config, null, 2);
+              }
+
+              async function convertFormat() {
+                const input = document.getElementById('input').value;
+                const format = document.getElementById('format').value;
+                const result = document.getElementById('result');
+                
+                if (!input.trim()) {
+                  alert('请输入节点内容');
                   return;
                 }
-                
-                nodeList.innerHTML = nodes.map(node => {
-                  const date = new Date(node.updated_at).toLocaleString();
-                  const size = (node.size / 1024).toFixed(1) + ' KB';
-                  return \`
-                    <div class="card">
-                      <div class="card-header">\${node.name}</div>
-                      <div class="card-body">
-                        <div class="stats">
-                          <span>大小: \${size}</span>
-                          <span>目录: \${node.directory}</span>
-                        </div>
-                        <a href="\${node.download_url}" 
-                           class="download-btn" 
-                           target="_blank"
-                           rel="noopener noreferrer">
-                          下载配置
-                        </a>
-                      </div>
-                    </div>
-                  \`;
-                }).join('');
-              }
 
-              document.addEventListener('DOMContentLoaded', fetchNodes);
-              setInterval(fetchNodes, 5 * 60 * 1000);
+                try {
+                  const nodes = parseNode(input);
+                  if (nodes.length === 0) {
+                    throw new Error('未能识别任何有效节点');
+                  }
+                  const converted = convertToFormat(nodes, format);
+                  result.textContent = converted;
+                  result.style.display = 'block';
+                } catch (error) {
+                  alert('转换失败: ' + error.message);
+                }
+              }
             </script>
           </body>
         </html>
