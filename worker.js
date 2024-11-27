@@ -10,34 +10,64 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
+        const githubHeaders = {
+          'Accept': 'application/vnd.github.v3+json',
+        };
+
         const apiUrl = 'https://api.github.com/repos/changfengoss/pub/contents/data';
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, { headers: githubHeaders });
+        
+        if (!response.ok) {
+          throw new Error(`GitHub API error: ${response.status}`);
+        }
+        
         const data = await response.json();
         
         const latestDir = data
           .filter(item => item.type === 'dir')
           .sort((a, b) => b.name.localeCompare(a.name))[0];
 
-        const filesResponse = await fetch(latestDir.url);
+        if (!latestDir) {
+          throw new Error('No date directories found');
+        }
+
+        const filesResponse = await fetch(latestDir.url, { headers: githubHeaders });
+        
+        if (!filesResponse.ok) {
+          throw new Error(`GitHub API error when fetching files: ${filesResponse.status}`);
+        }
+        
         const files = await filesResponse.json();
 
-        const nodeFiles = files.filter(file => 
-          file.name.endsWith('.yaml') || 
-          file.name.endsWith('.txt') ||
-          file.name.endsWith('.yml')
-        );
+        const nodeFiles = files.filter(file => {
+          const lowerName = file.name.toLowerCase();
+          return lowerName.includes('clash') || 
+                 lowerName.includes('node') || 
+                 lowerName.endsWith('.yaml') || 
+                 lowerName.endsWith('.txt') ||
+                 lowerName.endsWith('.yml');
+        });
 
         const nodes = nodeFiles.map(file => ({
           name: file.name,
           download_url: file.download_url,
           size: file.size,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          type: file.name.split('.').pop().toLowerCase()
         }));
+
+        if (nodes.length === 0) {
+          throw new Error('No node files found in the latest directory');
+        }
 
         return new Response(JSON.stringify(nodes), { headers });
       } catch (error) {
         console.error('Error:', error);
-        return new Response(JSON.stringify({ error: '获取节点失败', details: error.message }), { 
+        return new Response(JSON.stringify({ 
+          error: '获取节点失败', 
+          details: error.message,
+          timestamp: new Date().toISOString()
+        }), { 
           status: 500,
           headers 
         });
@@ -149,17 +179,24 @@ export default {
               async function fetchNodes() {
                 try {
                   const response = await fetch('/api/nodes');
+                  if (!response.ok) {
+                    throw new Error('API response was not ok');
+                  }
                   const data = await response.json();
+                  if (data.error) {
+                    throw new Error(data.error);
+                  }
                   displayNodes(data);
                 } catch (error) {
                   console.error('获取节点失败:', error);
-                  document.getElementById('nodeList').innerHTML = '<div class="loading">获取节点失败，请稍后重试</div>';
+                  document.getElementById('nodeList').innerHTML = 
+                    '<div class="loading">获取节点失败: ' + error.message + '<br>请稍后重试</div>';
                 }
               }
 
               function displayNodes(nodes) {
                 const nodeList = document.getElementById('nodeList');
-                if (!nodes.length) {
+                if (!nodes || !nodes.length) {
                   nodeList.innerHTML = '<div class="loading">暂无可用节点</div>';
                   return;
                 }
@@ -175,7 +212,12 @@ export default {
                           <span>大小: \${size}</span>
                           <span>更新: \${date}</span>
                         </div>
-                        <a href="\${node.download_url}" class="download-btn">下载配置</a>
+                        <a href="\${node.download_url}" 
+                           class="download-btn" 
+                           target="_blank"
+                           rel="noopener noreferrer">
+                          下载配置
+                        </a>
                       </div>
                     </div>
                   \`;
