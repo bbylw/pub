@@ -14,16 +14,24 @@ export default {
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const day = String(today.getDate()).padStart(2, '0');
-        const dateStr = `${year}${month}${day}`;
+        const dateStr = `${year}_${month}_${day}`;
 
         const baseUrl = 'https://raw.githubusercontent.com/changfengoss/pub/main/data/';
         const directoryUrl = `${baseUrl}${dateStr}`;
 
         const possibleFiles = [
+          'all.yaml',
+          'all.txt',
           'clash.yaml',
-          'clash.yml',
-          'nodes.txt',
-          'proxies.txt'
+          'clash.txt',
+          'ss.yaml',
+          'ss.txt',
+          'ssr.yaml',
+          'ssr.txt',
+          'v2ray.yaml',
+          'v2ray.txt',
+          'trojan.yaml',
+          'trojan.txt'
         ];
 
         const nodes = [];
@@ -32,10 +40,11 @@ export default {
           try {
             const response = await fetch(`${directoryUrl}/${fileName}`);
             if (response.ok) {
+              const content = await response.text();
               nodes.push({
                 name: fileName,
                 download_url: `${directoryUrl}/${fileName}`,
-                size: (await response.text()).length,
+                size: content.length,
                 updated_at: new Date().toISOString(),
                 type: fileName.split('.').pop().toLowerCase()
               });
@@ -48,17 +57,18 @@ export default {
         if (nodes.length === 0) {
           const yesterday = new Date(today);
           yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = `${yesterday.getFullYear()}${String(yesterday.getMonth() + 1).padStart(2, '0')}${String(yesterday.getDate()).padStart(2, '0')}`;
+          const yesterdayStr = `${yesterday.getFullYear()}_${String(yesterday.getMonth() + 1).padStart(2, '0')}_${String(yesterday.getDate()).padStart(2, '0')}`;
           const yesterdayUrl = `${baseUrl}${yesterdayStr}`;
 
           for (const fileName of possibleFiles) {
             try {
               const response = await fetch(`${yesterdayUrl}/${fileName}`);
               if (response.ok) {
+                const content = await response.text();
                 nodes.push({
                   name: `${yesterdayStr}_${fileName}`,
                   download_url: `${yesterdayUrl}/${fileName}`,
-                  size: (await response.text()).length,
+                  size: content.length,
                   updated_at: new Date().toISOString(),
                   type: fileName.split('.').pop().toLowerCase()
                 });
@@ -73,6 +83,7 @@ export default {
           throw new Error('No available nodes found for today or yesterday');
         }
 
+        console.log('Found nodes:', nodes.length);
         return new Response(JSON.stringify(nodes), { headers });
       } catch (error) {
         console.error('Error:', error);
