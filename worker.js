@@ -2,6 +2,16 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    // 强制 HTTPS 重定向
+    if (url.protocol === 'http:') {
+      return new Response(null, {
+        status: 301,
+        headers: {
+          'Location': 'https://' + url.hostname + url.pathname + url.search
+        }
+      });
+    }
+
     if (url.pathname === '/') {
       return new Response(`
         <!DOCTYPE html>
@@ -181,17 +191,17 @@ export default {
                 </div>
 
                 <div class="card">
-                  <div class="card-header">Clash Verge</div>
+                  <div class="card-header">Clash Verge Rev</div>
                   <div class="card-body">
                     <p class="card-description">
-                      基于 Tauri 的现代化 Clash 图形客户端，界面美观，性能优秀。
+                      基于 Tauri 2 的现代化 Clash GUI，支持 Meta 内核，界面美观，性能优秀。支持配置文件管理和增强。
                     </p>
                     <span class="tag">全平台</span>
-                    <a href="https://github.com/zzzgydi/clash-verge" 
+                    <a href="https://github.com/clash-verge-rev/clash-verge-rev" 
                        class="card-link" 
                        target="_blank"
                        rel="noopener noreferrer">
-                      下载地址
+                      项目主页
                     </a>
                   </div>
                 </div>
@@ -202,10 +212,21 @@ export default {
       `, {
         headers: {
           'Content-Type': 'text/html;charset=UTF-8',
+          'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+          'X-XSS-Protection': '1; mode=block',
+          'Referrer-Policy': 'strict-origin-when-cross-origin',
+          'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self';"
         }
       });
     }
 
-    return new Response('Not Found', { status: 404 });
+    return new Response('Not Found', { 
+      status: 404,
+      headers: {
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
+      }
+    });
   }
 }; 
