@@ -10,54 +10,67 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        const githubHeaders = {
-          'Accept': 'application/vnd.github.v3+json',
-        };
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateStr = `${year}${month}${day}`;
 
-        const apiUrl = 'https://api.github.com/repos/changfengoss/pub/contents/data';
-        const response = await fetch(apiUrl, { headers: githubHeaders });
+        const baseUrl = 'https://raw.githubusercontent.com/changfengoss/pub/main/data/';
+        const directoryUrl = `${baseUrl}${dateStr}`;
+
+        const possibleFiles = [
+          'clash.yaml',
+          'clash.yml',
+          'nodes.txt',
+          'proxies.txt'
+        ];
+
+        const nodes = [];
         
-        if (!response.ok) {
-          throw new Error(`GitHub API error: ${response.status}`);
+        for (const fileName of possibleFiles) {
+          try {
+            const response = await fetch(`${directoryUrl}/${fileName}`);
+            if (response.ok) {
+              nodes.push({
+                name: fileName,
+                download_url: `${directoryUrl}/${fileName}`,
+                size: (await response.text()).length,
+                updated_at: new Date().toISOString(),
+                type: fileName.split('.').pop().toLowerCase()
+              });
+            }
+          } catch (e) {
+            console.error(`Error fetching ${fileName}:`, e);
+          }
         }
-        
-        const data = await response.json();
-        
-        const latestDir = data
-          .filter(item => item.type === 'dir')
-          .sort((a, b) => b.name.localeCompare(a.name))[0];
-
-        if (!latestDir) {
-          throw new Error('No date directories found');
-        }
-
-        const filesResponse = await fetch(latestDir.url, { headers: githubHeaders });
-        
-        if (!filesResponse.ok) {
-          throw new Error(`GitHub API error when fetching files: ${filesResponse.status}`);
-        }
-        
-        const files = await filesResponse.json();
-
-        const nodeFiles = files.filter(file => {
-          const lowerName = file.name.toLowerCase();
-          return lowerName.includes('clash') || 
-                 lowerName.includes('node') || 
-                 lowerName.endsWith('.yaml') || 
-                 lowerName.endsWith('.txt') ||
-                 lowerName.endsWith('.yml');
-        });
-
-        const nodes = nodeFiles.map(file => ({
-          name: file.name,
-          download_url: file.download_url,
-          size: file.size,
-          updated_at: new Date().toISOString(),
-          type: file.name.split('.').pop().toLowerCase()
-        }));
 
         if (nodes.length === 0) {
-          throw new Error('No node files found in the latest directory');
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = `${yesterday.getFullYear()}${String(yesterday.getMonth() + 1).padStart(2, '0')}${String(yesterday.getDate()).padStart(2, '0')}`;
+          const yesterdayUrl = `${baseUrl}${yesterdayStr}`;
+
+          for (const fileName of possibleFiles) {
+            try {
+              const response = await fetch(`${yesterdayUrl}/${fileName}`);
+              if (response.ok) {
+                nodes.push({
+                  name: `${yesterdayStr}_${fileName}`,
+                  download_url: `${yesterdayUrl}/${fileName}`,
+                  size: (await response.text()).length,
+                  updated_at: new Date().toISOString(),
+                  type: fileName.split('.').pop().toLowerCase()
+                });
+              }
+            } catch (e) {
+              console.error(`Error fetching yesterday's ${fileName}:`, e);
+            }
+          }
+        }
+
+        if (nodes.length === 0) {
+          throw new Error('No available nodes found for today or yesterday');
         }
 
         return new Response(JSON.stringify(nodes), { headers });
