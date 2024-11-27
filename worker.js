@@ -10,17 +10,16 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        // 1. 首先获取 data 目录下的所有文件夹
-        const apiUrl = 'https://api.github.com/repos/changfengoss/pub/contents/data';
-        const response = await fetch(apiUrl);
+        // 直接获取仓库内容
+        const response = await fetch('https://api.github.com/repos/changfengoss/pub/contents/data');
         
         if (!response.ok) {
-          throw new Error(`Failed to fetch directory list: ${response.status}`);
+          throw new Error(`Failed to fetch data directory: ${response.status}`);
         }
 
         const directories = await response.json();
         
-        // 2. 获取最新的日期文件夹
+        // 获取最新的日期目录
         const latestDir = directories
           .filter(item => item.type === 'dir')
           .sort((a, b) => b.name.localeCompare(a.name))[0];
@@ -29,32 +28,28 @@ export default {
           throw new Error('No date directories found');
         }
 
-        console.log('Latest directory:', latestDir.name);
-
-        // 3. 获取该文件夹下的所有文件
+        // 获取最新目录下的文件
         const filesResponse = await fetch(latestDir.url);
-        if (!filesResponse.ok) {
-          throw new Error(`Failed to fetch files: ${filesResponse.status}`);
-        }
-
         const files = await filesResponse.json();
-        
-        // 4. 过滤并处理节点文件
-        const nodeFiles = files.filter(file => {
-          const name = file.name.toLowerCase();
-          return name.endsWith('.txt') || 
-                 name.endsWith('.yaml') || 
-                 name.endsWith('.yml');
-        });
 
-        const nodes = nodeFiles.map(file => ({
-          name: file.name,
-          download_url: file.download_url,
-          size: file.size,
-          updated_at: new Date().toISOString(),
-          type: file.name.split('.').pop().toLowerCase(),
-          directory: latestDir.name
-        }));
+        // 过滤节点文件
+        const nodes = files
+          .filter(file => {
+            const name = file.name.toLowerCase();
+            return name.includes('clash') || 
+                   name.includes('node') || 
+                   name.endsWith('.yaml') || 
+                   name.endsWith('.txt') ||
+                   name.endsWith('.yml');
+          })
+          .map(file => ({
+            name: file.name,
+            download_url: file.download_url,
+            size: file.size,
+            updated_at: new Date().toISOString(),
+            type: file.name.split('.').pop().toLowerCase(),
+            directory: latestDir.name
+          }));
 
         if (nodes.length === 0) {
           throw new Error(`No node files found in directory ${latestDir.name}`);
