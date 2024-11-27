@@ -10,61 +10,65 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        // 获取今天的日期
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
+        // 首先获取主页面内容来找到最新的日期目录
+        const mainPageResponse = await fetch('https://github.com/changfengoss/pub/tree/main/data');
+        if (!mainPageResponse.ok) {
+          throw new Error('Failed to fetch main page');
+        }
         
-        // 尝试今天和昨天的日期
-        const dates = [
-          `${year}_${month}_${day}`,
-          `${year}_${month}_${String(today.getDate() - 1).padStart(2, '0')}`
+        const html = await mainPageResponse.text();
+        
+        // 从HTML中提取日期目录
+        const dateMatch = html.match(/href="\/changfengoss\/pub\/tree\/main\/data\/(202\d_\d{2}_\d{2})"/);
+        if (!dateMatch) {
+          throw new Error('No date directory found');
+        }
+        
+        const latestDate = dateMatch[1];
+        const baseUrl = `https://raw.githubusercontent.com/changfengoss/pub/main/data/${latestDate}`;
+        
+        // 尝试获取不同类型的节点文件
+        const fileTypes = [
+          'clash',
+          'all',
+          'ss',
+          'ssr',
+          'v2ray',
+          'trojan'
         ];
-
-        const possibleFiles = [
-          'clash.yaml',
-          'clash.txt',
-          'all.yaml',
-          'all.txt',
-          'v2ray.txt',
-          'v2ray.yaml'
-        ];
-
-        let nodes = [];
-
-        // 遍历日期和可能的文件
-        for (const date of dates) {
-          for (const file of possibleFiles) {
-            const fileUrl = `https://raw.githubusercontent.com/changfengoss/pub/main/data/${date}/${file}`;
+        
+        const nodes = [];
+        
+        // 对每种类型尝试不同的文件扩展名
+        for (const type of fileTypes) {
+          for (const ext of ['.yml', '.yaml', '.txt']) {
+            const fileName = `${type}${ext}`;
+            const fileUrl = `${baseUrl}/${fileName}`;
+            
             try {
-              const response = await fetch(fileUrl, { method: 'HEAD' });
-              if (response.ok) {
+              // 使用 HEAD 请求检查文件是否存在
+              const checkResponse = await fetch(fileUrl, { method: 'HEAD' });
+              if (checkResponse.ok) {
                 nodes.push({
-                  name: file,
+                  name: fileName,
                   download_url: fileUrl,
-                  size: response.headers.get('content-length') || 0,
+                  size: parseInt(checkResponse.headers.get('content-length') || '0'),
                   updated_at: new Date().toISOString(),
-                  type: file.split('.').pop().toLowerCase(),
-                  directory: date
+                  type: type,
+                  directory: latestDate
                 });
               }
             } catch (e) {
-              console.error(`Error checking ${fileUrl}:`, e);
+              console.error(`Error checking ${fileName}:`, e);
             }
-          }
-          
-          // 如果在当前日期找到了节点，就不继续查找了
-          if (nodes.length > 0) {
-            break;
           }
         }
 
         if (nodes.length === 0) {
-          throw new Error('No available nodes found');
+          throw new Error(`No node files found in directory ${latestDate}`);
         }
 
-        console.log(`Found ${nodes.length} nodes`);
+        console.log(`Found ${nodes.length} nodes in ${latestDate}`);
         return new Response(JSON.stringify(nodes), { headers });
 
       } catch (error) {
