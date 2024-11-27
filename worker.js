@@ -10,65 +10,71 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        // 首先获取主页面内容来找到最新的日期目录
-        const mainPageResponse = await fetch('https://github.com/changfengoss/pub/tree/main/data');
-        if (!mainPageResponse.ok) {
-          throw new Error('Failed to fetch main page');
-        }
-        
-        const html = await mainPageResponse.text();
-        
-        // 从HTML中提取日期目录
-        const dateMatch = html.match(/href="\/changfengoss\/pub\/tree\/main\/data\/(202\d_\d{2}_\d{2})"/);
-        if (!dateMatch) {
-          throw new Error('No date directory found');
-        }
-        
-        const latestDate = dateMatch[1];
-        const baseUrl = `https://raw.githubusercontent.com/changfengoss/pub/main/data/${latestDate}`;
-        
-        // 尝试获取不同类型的节点文件
-        const fileTypes = [
-          'clash',
-          'all',
-          'ss',
-          'ssr',
-          'v2ray',
-          'trojan'
-        ];
-        
-        const nodes = [];
-        
-        // 对每种类型尝试不同的文件扩展名
-        for (const type of fileTypes) {
-          for (const ext of ['.yml', '.yaml', '.txt']) {
-            const fileName = `${type}${ext}`;
-            const fileUrl = `${baseUrl}/${fileName}`;
-            
-            try {
-              // 使用 HEAD 请求检查文件是否存在
-              const checkResponse = await fetch(fileUrl, { method: 'HEAD' });
-              if (checkResponse.ok) {
-                nodes.push({
-                  name: fileName,
-                  download_url: fileUrl,
-                  size: parseInt(checkResponse.headers.get('content-length') || '0'),
-                  updated_at: new Date().toISOString(),
-                  type: type,
-                  directory: latestDate
-                });
-              }
-            } catch (e) {
-              console.error(`Error checking ${fileName}:`, e);
+        // 使用 GitHub API 获取目录列表
+        const apiResponse = await fetch(
+          'https://api.github.com/repos/changfengoss/pub/contents/data',
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'NodesHub'
             }
           }
+        );
+
+        if (!apiResponse.ok) {
+          throw new Error(`GitHub API error: ${apiResponse.status}`);
         }
+
+        const directories = await apiResponse.json();
+        
+        // 获取最新的日期目录
+        const latestDir = directories
+          .filter(item => item.type === 'dir')
+          .sort((a, b) => b.name.localeCompare(a.name))[0];
+
+        if (!latestDir) {
+          throw new Error('No date directories found');
+        }
+
+        // 获取最新目录下的文件列表
+        const filesResponse = await fetch(
+          `https://api.github.com/repos/changfengoss/pub/contents/data/${latestDir.name}`,
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'NodesHub'
+            }
+          }
+        );
+
+        if (!filesResponse.ok) {
+          throw new Error(`Failed to fetch files: ${filesResponse.status}`);
+        }
+
+        const files = await filesResponse.json();
+
+        // 过滤并处理节点文件
+        const nodes = files
+          .filter(file => {
+            const name = file.name.toLowerCase();
+            return name.endsWith('.txt') || 
+                   name.endsWith('.yaml') || 
+                   name.endsWith('.yml');
+          })
+          .map(file => ({
+            name: file.name,
+            download_url: file.download_url,
+            size: file.size,
+            updated_at: new Date().toISOString(),
+            type: file.name.split('.').pop().toLowerCase(),
+            directory: latestDir.name
+          }));
 
         if (nodes.length === 0) {
-          throw new Error(`No node files found in directory ${latestDate}`);
+          throw new Error(`No node files found in directory ${latestDir.name}`);
         }
 
-        console.log(`Found ${nodes.length} nodes in ${latestDate}`);
+        console.log(`Found ${nodes.length} nodes in ${latestDir.name}`);
         return new Response(JSON.stringify(nodes), { headers });
 
       } catch (error) {
