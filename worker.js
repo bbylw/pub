@@ -10,81 +10,59 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const dateStr = `${year}_${month}_${day}`;
-
-        const baseUrl = 'https://raw.githubusercontent.com/changfengoss/pub/main/data/';
-        const directoryUrl = `${baseUrl}${dateStr}`;
-
-        const possibleFiles = [
-          'all.yaml',
-          'all.txt',
-          'clash.yaml',
-          'clash.txt',
-          'ss.yaml',
-          'ss.txt',
-          'ssr.yaml',
-          'ssr.txt',
-          'v2ray.yaml',
-          'v2ray.txt',
-          'trojan.yaml',
-          'trojan.txt'
-        ];
-
-        const nodes = [];
+        // 1. 首先获取 data 目录下的所有文件夹
+        const apiUrl = 'https://api.github.com/repos/changfengoss/pub/contents/data';
+        const response = await fetch(apiUrl);
         
-        for (const fileName of possibleFiles) {
-          try {
-            const response = await fetch(`${directoryUrl}/${fileName}`);
-            if (response.ok) {
-              const content = await response.text();
-              nodes.push({
-                name: fileName,
-                download_url: `${directoryUrl}/${fileName}`,
-                size: content.length,
-                updated_at: new Date().toISOString(),
-                type: fileName.split('.').pop().toLowerCase()
-              });
-            }
-          } catch (e) {
-            console.error(`Error fetching ${fileName}:`, e);
-          }
+        if (!response.ok) {
+          throw new Error(`Failed to fetch directory list: ${response.status}`);
         }
+
+        const directories = await response.json();
+        
+        // 2. 获取最新的日期文件夹
+        const latestDir = directories
+          .filter(item => item.type === 'dir')
+          .sort((a, b) => b.name.localeCompare(a.name))[0];
+
+        if (!latestDir) {
+          throw new Error('No date directories found');
+        }
+
+        console.log('Latest directory:', latestDir.name);
+
+        // 3. 获取该文件夹下的所有文件
+        const filesResponse = await fetch(latestDir.url);
+        if (!filesResponse.ok) {
+          throw new Error(`Failed to fetch files: ${filesResponse.status}`);
+        }
+
+        const files = await filesResponse.json();
+        
+        // 4. 过滤并处理节点文件
+        const nodeFiles = files.filter(file => {
+          const name = file.name.toLowerCase();
+          return name.endsWith('.txt') || 
+                 name.endsWith('.yaml') || 
+                 name.endsWith('.yml');
+        });
+
+        const nodes = nodeFiles.map(file => ({
+          name: file.name,
+          download_url: file.download_url,
+          size: file.size,
+          updated_at: new Date().toISOString(),
+          type: file.name.split('.').pop().toLowerCase(),
+          directory: latestDir.name
+        }));
 
         if (nodes.length === 0) {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = `${yesterday.getFullYear()}_${String(yesterday.getMonth() + 1).padStart(2, '0')}_${String(yesterday.getDate()).padStart(2, '0')}`;
-          const yesterdayUrl = `${baseUrl}${yesterdayStr}`;
-
-          for (const fileName of possibleFiles) {
-            try {
-              const response = await fetch(`${yesterdayUrl}/${fileName}`);
-              if (response.ok) {
-                const content = await response.text();
-                nodes.push({
-                  name: `${yesterdayStr}_${fileName}`,
-                  download_url: `${yesterdayUrl}/${fileName}`,
-                  size: content.length,
-                  updated_at: new Date().toISOString(),
-                  type: fileName.split('.').pop().toLowerCase()
-                });
-              }
-            } catch (e) {
-              console.error(`Error fetching yesterday's ${fileName}:`, e);
-            }
-          }
+          throw new Error(`No node files found in directory ${latestDir.name}`);
         }
 
-        if (nodes.length === 0) {
-          throw new Error('No available nodes found for today or yesterday');
-        }
-
-        console.log('Found nodes:', nodes.length);
+        console.log(`Found ${nodes.length} nodes in ${latestDir.name}`);
         return new Response(JSON.stringify(nodes), { headers });
+
       } catch (error) {
         console.error('Error:', error);
         return new Response(JSON.stringify({ 
@@ -112,7 +90,7 @@ export default {
                 padding: 0;
                 background-color: #1b1b1b;
                 color: #ffffff;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
               }
               .header {
                 background-color: #000000;
@@ -154,9 +132,6 @@ export default {
                 background-color: #000000;
                 padding: 1rem;
                 font-size: 1.1rem;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
               }
               .card-body {
                 padding: 1rem;
@@ -204,7 +179,7 @@ export default {
                 try {
                   const response = await fetch('/api/nodes');
                   if (!response.ok) {
-                    throw new Error('API response was not ok');
+                    throw new Error(\`HTTP error! status: \${response.status}\`);
                   }
                   const data = await response.json();
                   if (data.error) {
@@ -234,7 +209,7 @@ export default {
                       <div class="card-body">
                         <div class="stats">
                           <span>大小: \${size}</span>
-                          <span>更新: \${date}</span>
+                          <span>目录: \${node.directory}</span>
                         </div>
                         <a href="\${node.download_url}" 
                            class="download-btn" 
