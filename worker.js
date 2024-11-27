@@ -10,52 +10,61 @@ export default {
 
     if (url.pathname === '/api/nodes') {
       try {
-        // 直接获取仓库内容
-        const response = await fetch('https://api.github.com/repos/changfengoss/pub/contents/data');
+        // 获取今天的日期
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
         
-        if (!response.ok) {
-          throw new Error(`Failed to fetch data directory: ${response.status}`);
+        // 尝试今天和昨天的日期
+        const dates = [
+          `${year}_${month}_${day}`,
+          `${year}_${month}_${String(today.getDate() - 1).padStart(2, '0')}`
+        ];
+
+        const possibleFiles = [
+          'clash.yaml',
+          'clash.txt',
+          'all.yaml',
+          'all.txt',
+          'v2ray.txt',
+          'v2ray.yaml'
+        ];
+
+        let nodes = [];
+
+        // 遍历日期和可能的文件
+        for (const date of dates) {
+          for (const file of possibleFiles) {
+            const fileUrl = `https://raw.githubusercontent.com/changfengoss/pub/main/data/${date}/${file}`;
+            try {
+              const response = await fetch(fileUrl, { method: 'HEAD' });
+              if (response.ok) {
+                nodes.push({
+                  name: file,
+                  download_url: fileUrl,
+                  size: response.headers.get('content-length') || 0,
+                  updated_at: new Date().toISOString(),
+                  type: file.split('.').pop().toLowerCase(),
+                  directory: date
+                });
+              }
+            } catch (e) {
+              console.error(`Error checking ${fileUrl}:`, e);
+            }
+          }
+          
+          // 如果在当前日期找到了节点，就不继续查找了
+          if (nodes.length > 0) {
+            break;
+          }
         }
-
-        const directories = await response.json();
-        
-        // 获取最新的日期目录
-        const latestDir = directories
-          .filter(item => item.type === 'dir')
-          .sort((a, b) => b.name.localeCompare(a.name))[0];
-
-        if (!latestDir) {
-          throw new Error('No date directories found');
-        }
-
-        // 获取最新目录下的文件
-        const filesResponse = await fetch(latestDir.url);
-        const files = await filesResponse.json();
-
-        // 过滤节点文件
-        const nodes = files
-          .filter(file => {
-            const name = file.name.toLowerCase();
-            return name.includes('clash') || 
-                   name.includes('node') || 
-                   name.endsWith('.yaml') || 
-                   name.endsWith('.txt') ||
-                   name.endsWith('.yml');
-          })
-          .map(file => ({
-            name: file.name,
-            download_url: file.download_url,
-            size: file.size,
-            updated_at: new Date().toISOString(),
-            type: file.name.split('.').pop().toLowerCase(),
-            directory: latestDir.name
-          }));
 
         if (nodes.length === 0) {
-          throw new Error(`No node files found in directory ${latestDir.name}`);
+          throw new Error('No available nodes found');
         }
 
-        console.log(`Found ${nodes.length} nodes in ${latestDir.name}`);
+        console.log(`Found ${nodes.length} nodes`);
         return new Response(JSON.stringify(nodes), { headers });
 
       } catch (error) {
